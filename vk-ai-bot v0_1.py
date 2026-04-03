@@ -2,7 +2,6 @@ from flask import Flask, request
 import requests
 import os
 import time
-from collections import defaultdict
 
 app = Flask(__name__)
 
@@ -12,9 +11,9 @@ OPENROUTER_KEY = os.environ.get("OPENROUTER_KEY")
 CONFIRMATION_CODE = os.environ.get("CONFIRMATION_CODE")
 # =========================================
 
-# Кэш для обработки повторных запросов (храним ID обработанных сообщений)
-processed_messages = defaultdict(lambda: {"processed": False, "timestamp": 0})
-CACHE_TTL = 300  # 5 минут - храним ID сообщения
+# Простой словарь для хранения обработанных сообщений
+processed_messages = {}
+CACHE_TTL = 300  # 5 минут
 
 # Модели в порядке приоритета
 MODELS = [
@@ -37,7 +36,7 @@ def send_message(user_id, text):
             params={
                 "user_id": user_id,
                 "message": text,
-                "random_id": int(time.time() * 1000),  # Уникальный ID
+                "random_id": int(time.time() * 1000),
                 "access_token": VK_TOKEN,
                 "v": "5.199"
             },
@@ -114,33 +113,30 @@ def webhook():
         message = data['object']['message']
         user_id = message['from_id']
         text = message.get('text', '').strip()
-        message_id = message.get('id')  # Уникальный ID сообщения
+        message_id = str(message.get('id', ''))
         
-        # ✅ ПРОВЕРКА НА ДУБЛИКАТ
+        # Проверка на дубликат
         if message_id:
             current_time = time.time()
-            # Если сообщение уже обработано и прошло меньше CACHE_TTL секунд
-            if processed_messages[message_id]["processed"]:
-                if current_time - processed_messages[message_id]["timestamp"] < CACHE_TTL:
+            if message_id in processed_messages:
+                if current_time - processed_messages[message_id] < CACHE_TTL:
                     print(f"⚠️ Пропускаю дубликат сообщения {message_id}")
                     return 'ok', 200
             
-            # Отмечаем сообщение как обрабатываемое
-            processed_messages[message_id]["processed"] = True
-            processed_messages[message_id]["timestamp"] = current_time
+            processed_messages[message_id] = current_time
         
         if not text:
             return 'ok', 200
         
-        print(f"📩 Обрабатываю сообщение {message_id}: {text[:50]}")
+        print(f"📩 Обрабатываю: {text[:50]}")
         
-        # Получаем ответ от ИИ
+        # Очищаем старые записи в кэше
+        for msg_id in list(processed_messages.keys()):
+            if current_time - processed_messages[msg_id] > CACHE_TTL:
+                del processed_messages[msg_id]
+        
         answer = ask_ai(text)
-        
-        # Отправляем ответ
         send_message(user_id, answer)
-        
-        # Небольшая задержка, чтобы ВК успел получить ответ
         time.sleep(0.5)
     
     return 'ok', 200

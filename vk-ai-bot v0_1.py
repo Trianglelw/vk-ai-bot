@@ -1,34 +1,34 @@
 from flask import Flask, request
 import requests
-import json
+import os
 
 app = Flask(__name__)
 
-# ========== НАСТРОЙКИ (ЗАМЕНИТЕ НА СВОИ) ==========
-VK_TOKEN = "ваш_токен_группы"
-GROUP_ID = "123456789"
-OPENROUTER_KEY = "ваш_ключ_openrouter"
-CONFIRMATION_CODE = "ваш_код_подтверждения"  # Получите в настройках Callback API ВК
-# =================================================
+# Берём секреты из переменных окружения
+VK_TOKEN = os.environ.get("VK_TOKEN")
+GROUP_ID = os.environ.get("GROUP_ID")           # Добавили GROUP_ID
+OPENROUTER_KEY = os.environ.get("OPENROUTER_KEY")
+CONFIRMATION_CODE = os.environ.get("CONFIRMATION_CODE")
 
 def send_message(user_id, text):
-    """Отправляет сообщение пользователю"""
     if len(text) > 4000:
         text = text[:3997] + "..."
     
-    requests.post(
-        url="https://api.vk.com/method/messages.send",
-        params={
-            "user_id": user_id,
-            "message": text,
-            "random_id": 0,
-            "access_token": VK_TOKEN,
-            "v": "5.199"
-        }
-    )
+    try:
+        requests.post(
+            url="https://api.vk.com/method/messages.send",
+            params={
+                "user_id": user_id,
+                "message": text,
+                "random_id": 0,
+                "access_token": VK_TOKEN,
+                "v": "5.199"
+            }
+        )
+    except Exception as e:
+        print(f"Ошибка отправки: {e}")
 
 def ask_ai(prompt):
-    """Отправляет запрос в нейросеть"""
     try:
         response = requests.post(
             url="https://openrouter.ai/api/v1/chat/completions",
@@ -42,7 +42,7 @@ def ask_ai(prompt):
                     {"role": "system", "content": "Ты — AI-ассистент. Отвечай ТОЛЬКО на русском языке."},
                     {"role": "user", "content": prompt}
                 ],
-                "max_tokens": 1000
+                "max_tokens": 500
             },
             timeout=60
         )
@@ -57,11 +57,9 @@ def ask_ai(prompt):
 def webhook():
     data = request.get_json()
     
-    # Подтверждение сервера
     if data.get('type') == 'confirmation':
         return CONFIRMATION_CODE
     
-    # Обработка нового сообщения
     elif data.get('type') == 'message_new':
         message = data['object']['message']
         user_id = message['from_id']
@@ -75,7 +73,7 @@ def webhook():
 
 @app.route('/')
 def index():
-    return "Бот работает! 🚀", 200
+    return "Bot is running", 200
 
 @app.route('/ping')
 def ping():
